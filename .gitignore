@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+build/
+dist/
+
+# Logs & coverage
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+
+# Env & editor
+.env
+.env.*
+.vscode/
+.DS_Store
+
+# Local artifacts
+claudeLogs/
+
+# Debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# Windows
+Thumbs.db
+
+# local env files
+.env*.local
+.env
+.env.backup
+api-server.env
+
+# typescript
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Cache
+.cache/
+*.cache
