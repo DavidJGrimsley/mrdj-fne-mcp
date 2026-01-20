@@ -77,230 +77,216 @@ async function readGuide(guideId: string): Promise<string> {
   return await readFile(guidePath, "utf-8");
 }
 
-async function listGuidesAsResources() {
-  return GUIDES.map((guide) => ({
-    uri: `verse://guides/${guide.id}`,
-    name: guide.title,
-    description: guide.description,
-    mimeType: "text/markdown"
-  }));
+const server = new McpServer(
+  {
+    name: "mrdj-fne-mcp",
+    version: "0.1.0",
+    description: "Verse programming guides and documentation for Fortnite/UEFN"
+  },
+  {
+    capabilities: {
+      resources: {},
+      tools: {}
+    }
+  }
+);
+
+function toFileUri(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  return `file:///${normalized}`;
 }
 
-const server = new McpServer({
-  name: "mrdj-fne-mcp",
-  version: "0.1.0"
-});
-
-// Register resources (guides as resources)
-server.resource_list(async () => {
-  const guideResources = await listGuidesAsResources();
-  return { resources: guideResources };
-});
-
-server.resource_read(async (request) => {
-  const uri = request.params.uri;
-  if (uri.startsWith("verse://guides/")) {
-    const guideId = uri.replace("verse://guides/", "");
-    const content = await readGuide(guideId);
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: "text/markdown",
-          text: content
-        }
-      ]
-    };
-  }
-  throw new Error(`Unknown resource: ${uri}`);
-});
-
-// Register tools
-server.tool_list(async () => {
-  return {
-    tools: [
-      {
-        name: "list_guides",
-        description: "List all available Verse programming guides",
-        inputSchema: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      },
-      {
-        name: "get_guide",
-        description: "Get the full content of a specific Verse guide by ID",
-        inputSchema: {
-          type: "object",
-          properties: {
-            guideId: {
-              type: "string",
-              description: "The ID of the guide to retrieve",
-              enum: GUIDES.map((g) => g.id)
-            }
-          },
-          required: ["guideId"]
-        }
-      },
-      {
-        name: "verse_syntax_help",
-        description: "Get help with specific Verse syntax topics (variables, functions, classes, etc.)",
-        inputSchema: {
-          type: "object",
-          properties: {
-            topic: {
-              type: "string",
-              description: "The syntax topic to get help with (e.g., 'variables', 'functions', 'classes', 'loops', 'conditionals')"
-            }
-          },
-          required: ["topic"]
-        }
-      },
-      {
-        name: "search_guides",
-        description: "Search through Verse guides for specific keywords or topics",
-        inputSchema: {
-          type: "object",
-          properties: {
-            query: {
-              type: "string",
-              description: "The search query"
-            }
-          },
-          required: ["query"]
-        }
-      }
-    ]
-  };
-});
-
-server.tool_call(async (request) => {
-  const { name, arguments: args } = request.params;
-
-  switch (name) {
-    case "list_guides": {
-      const guidesList = GUIDES.map((g) => ({
-        id: g.id,
-        title: g.title,
-        description: g.description
-      }));
+// Register each guide as a resource
+GUIDES.forEach((guide) => {
+  server.registerResource(
+    guide.id,
+    toFileUri(path.join(guidesDir, guide.fileName)),
+    {
+      title: guide.title,
+      description: guide.description,
+      mimeType: "text/markdown"
+    },
+    async () => {
+      const content = await readGuide(guide.id);
       return {
-        content: [
+        contents: [
           {
-            type: "text",
-            text: JSON.stringify(guidesList, null, 2)
-          }
-        ]
-      };
-    }
-
-    case "get_guide": {
-      const guideId = z.string().parse(args.guideId);
-      const content = await readGuide(guideId);
-      return {
-        content: [
-          {
-            type: "text",
+            uri: toFileUri(path.join(guidesDir, guide.fileName)),
             text: content
           }
         ]
       };
     }
-
-    case "verse_syntax_help": {
-      const topic = z.string().parse(args.topic);
-      const syntaxGuide = await readGuide("verse-syntax");
-      const topicLower = topic.toLowerCase();
-      
-      // Extract relevant section from the syntax guide
-      const lines = syntaxGuide.split("\n");
-      const relevantLines: string[] = [];
-      let capturing = false;
-      
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        if (line.toLowerCase().includes(topicLower)) {
-          capturing = true;
-        }
-        if (capturing) {
-          relevantLines.push(line);
-          // Stop at the next major heading or after 50 lines
-          if (relevantLines.length > 1 && line.startsWith("## ") && !line.toLowerCase().includes(topicLower)) {
-            break;
-          }
-          if (relevantLines.length > 50) {
-            break;
-          }
-        }
-      }
-      
-      const result = relevantLines.length > 0 
-        ? relevantLines.join("\n")
-        : `No specific information found for "${topic}". Try checking the full syntax guide.`;
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: result
-          }
-        ]
-      };
-    }
-
-    case "search_guides": {
-      const query = z.string().parse(args.query);
-      const queryLower = query.toLowerCase();
-      const results: Array<{ guide: string; matches: string[] }> = [];
-      
-      for (const guide of GUIDES) {
-        try {
-          const content = await readGuide(guide.id);
-          const lines = content.split("\n");
-          const matches: string[] = [];
-          
-          for (let i = 0; i < lines.length; i++) {
-            if (lines[i].toLowerCase().includes(queryLower)) {
-              // Include some context
-              const start = Math.max(0, i - 1);
-              const end = Math.min(lines.length, i + 2);
-              const context = lines.slice(start, end).join("\n");
-              matches.push(context);
-              if (matches.length >= 3) break; // Limit matches per guide
-            }
-          }
-          
-          if (matches.length > 0) {
-            results.push({
-              guide: guide.title,
-              matches
-            });
-          }
-        } catch (error) {
-          // Guide file doesn't exist yet, skip it
-          continue;
-        }
-      }
-      
-      const resultText = results.length > 0
-        ? results.map(r => `**${r.guide}**:\n${r.matches.join("\n\n---\n\n")}`).join("\n\n========\n\n")
-        : `No results found for "${query}"`;
-      
-      return {
-        content: [
-          {
-            type: "text",
-            text: resultText
-          }
-        ]
-      };
-    }
-
-    default:
-      throw new Error(`Unknown tool: ${name}`);
-  }
+  );
 });
+
+// Register tools
+server.registerTool(
+  "list_guides",
+  {
+    title: "List Verse Guides",
+    description: "List all available Verse programming guides",
+    inputSchema: z.object({})
+  },
+  async () => {
+    const guidesList = GUIDES.map((g) => ({
+      id: g.id,
+      title: g.title,
+      description: g.description
+    }));
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(guidesList, null, 2)
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "get_guide",
+  {
+    title: "Get Verse Guide",
+    description: "Get the full content of a specific Verse guide by ID",
+    inputSchema: z.object({
+      guideId: z.string().min(1).describe("Guide ID (run list_guides to see options)")
+    })
+  },
+  async (input: unknown) => {
+    const parsed = z.object({ guideId: z.string().min(1) }).parse(input);
+    const guide = GUIDES.find((g) => g.id === parsed.guideId);
+    if (!guide) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Unknown guide ID: ${parsed.guideId}. Run list_guides to see available guides.`
+          }
+        ]
+      };
+    }
+    const content = await readGuide(parsed.guideId);
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Guide: ${guide.title} (${guide.id})\n\n${content}`
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "verse_syntax_help",
+  {
+    title: "Verse Syntax Help",
+    description: "Get help with specific Verse syntax topics (variables, functions, classes, etc.)",
+    inputSchema: z.object({
+      topic: z.string().min(1).describe("Syntax topic (e.g., 'variables', 'functions', 'classes', 'loops')")
+    })
+  },
+  async (input: unknown) => {
+    const parsed = z.object({ topic: z.string().min(1) }).parse(input);
+    const syntaxGuide = await readGuide("verse-syntax");
+    const topicLower = parsed.topic.toLowerCase();
+    
+    // Extract relevant section from the syntax guide
+    const lines = syntaxGuide.split("\n");
+    const relevantLines: string[] = [];
+    let capturing = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.toLowerCase().includes(topicLower)) {
+        capturing = true;
+      }
+      if (capturing) {
+        relevantLines.push(line);
+        // Stop at the next major heading or after 50 lines
+        if (relevantLines.length > 1 && line.startsWith("## ") && !line.toLowerCase().includes(topicLower)) {
+          break;
+        }
+        if (relevantLines.length > 50) {
+          break;
+        }
+      }
+    }
+    
+    const result = relevantLines.length > 0 
+      ? relevantLines.join("\n")
+      : `No specific information found for "${parsed.topic}". Try checking the full syntax guide.`;
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: result
+        }
+      ]
+    };
+  }
+);
+
+server.registerTool(
+  "search_guides",
+  {
+    title: "Search Verse Guides",
+    description: "Search through Verse guides for specific keywords or topics",
+    inputSchema: z.object({
+      query: z.string().min(1).describe("Search query")
+    })
+  },
+  async (input: unknown) => {
+    const parsed = z.object({ query: z.string().min(1) }).parse(input);
+    const queryLower = parsed.query.toLowerCase();
+    const results: Array<{ guide: string; matches: string[] }> = [];
+    
+    for (const guide of GUIDES) {
+      try {
+        const content = await readGuide(guide.id);
+        const lines = content.split("\n");
+        const matches: string[] = [];
+        
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase().includes(queryLower)) {
+            // Include some context
+            const start = Math.max(0, i - 1);
+            const end = Math.min(lines.length, i + 2);
+            const context = lines.slice(start, end).join("\n");
+            matches.push(context);
+            if (matches.length >= 3) break; // Limit matches per guide
+          }
+        }
+        
+        if (matches.length > 0) {
+          results.push({
+            guide: guide.title,
+            matches
+          });
+        }
+      } catch (error) {
+        // Guide file doesn't exist yet, skip it
+        continue;
+      }
+    }
+    
+    const resultText = results.length > 0
+      ? results.map(r => `**${r.guide}**:\n${r.matches.join("\n\n---\n\n")}`).join("\n\n========\n\n")
+      : `No results found for "${parsed.query}"`;
+    
+    return {
+      content: [
+        {
+          type: "text",
+          text: resultText
+        }
+      ]
+    };
+  }
+);
 
 // Parse command-line arguments
 const args = process.argv.slice(2);
@@ -353,30 +339,87 @@ async function main() {
       });
     });
 
-    // Streamable HTTP transport endpoint
-    const httpTransport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    // Store transports by session ID
+    const transports: Record<string, StreamableHTTPServerTransport> = {};
+    const sseTransports: Record<string, SSEServerTransport> = {};
+
+    // MCP endpoint (Streamable HTTP + SSE fallback)
+    app.all("/mcp", async (req, res) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      const acceptHeader = req.headers.accept || "";
+      const isSseRequest = req.method === "GET" && acceptHeader.includes("text/event-stream") && !sessionId;
+
+      if (isSseRequest) {
+        // SSE mode for legacy clients
+        const transport = new SSEServerTransport("/messages", res);
+        const actualSessionId = transport.sessionId;
+        sseTransports[actualSessionId] = transport;
+
+        transport.onclose = () => {
+          delete sseTransports[actualSessionId];
+        };
+
+        try {
+          await server.connect(transport);
+        } catch (error) {
+          console.error("Error handling SSE MCP request:", error);
+          delete sseTransports[actualSessionId];
+          if (!res.headersSent) {
+            res.status(500).json({ error: "Internal server error" });
+          }
+        }
+        return;
+      }
+
+      // Streamable HTTP mode
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && transports[sessionId]) {
+        transport = transports[sessionId];
+      } else {
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          onsessioninitialized: (newSessionId) => {
+            transports[newSessionId] = transport;
+          }
+        });
+
+        transport.onclose = () => {
+          const sid = Object.keys(transports).find(k => transports[k] === transport);
+          if (sid) {
+            delete transports[sid];
+          }
+        };
+
+        await server.connect(transport);
+      }
+
+      try {
+        await transport.handleRequest(req, res);
+      } catch (error) {
+        console.error("Error handling MCP request:", error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Internal server error" });
+        }
+      }
     });
-    httpTransport.attach(server);
 
-    app.get("/mcp", async (req, res) => {
-      await httpTransport.handle(req, res);
-    });
-
-    app.post("/mcp", async (req, res) => {
-      await httpTransport.handle(req, res);
-    });
-
-    // SSE transport endpoints (fallback for legacy clients)
-    const sseTransport = new SSEServerTransport("/messages", res => res);
-    sseTransport.attach(server);
-
-    app.get("/messages", async (req, res) => {
-      await sseTransport.handle(req, res);
-    });
-
+    // SSE Messages endpoint
     app.post("/messages", async (req, res) => {
-      await sseTransport.handle(req, res);
+      const sessionId = req.query.sessionId as string;
+      const transport = sseTransports[sessionId];
+      if (transport) {
+        try {
+          await transport.handlePostMessage(req, res);
+        } catch (error) {
+          console.error("Error handling SSE message:", error);
+          if (!res.headersSent) {
+            res.status(500).json({ error: "Internal server error" });
+          }
+        }
+      } else {
+        res.status(404).json({ error: "Session not found" });
+      }
     });
 
     app.listen(httpPort, () => {
@@ -388,8 +431,7 @@ async function main() {
   } else {
     // Stdio mode (default)
     const transport = new StdioServerTransport();
-    transport.attach(server);
-    await transport.start();
+    await server.connect(transport);
   }
 }
 
