@@ -378,7 +378,7 @@ async function main() {
         transport = transports[sessionId];
       } else {
         transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          sessionIdGenerator: () => `session-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
           onsessioninitialized: (newSessionId) => {
             transports[newSessionId] = transport;
           }

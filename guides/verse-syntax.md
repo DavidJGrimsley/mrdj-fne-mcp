@@ -120,7 +120,7 @@ Count:int = Numbers.Length
 
 ```verse
 # Map from string to int
-Scores:[]int = map{
+Scores:[string]int = map{
     "Player1" => 100,
     "Player2" => 150
 }
@@ -535,12 +535,12 @@ Message:string = "{Name} scored {Score} points!"
 ### Pattern Matching (Limited)
 
 ```verse
-# Using if with type checking
-ProcessValue(Value:any):void=
-    if (IntValue := int[Value]):
+# Using if with optional unwrapping for type checking
+ProcessValue(Value:?int):void=
+    if (IntValue := Value?):
         Print("It's an int: {IntValue}")
-    else if (StrValue := string[Value]):
-        Print("It's a string: {StrValue}")
+    else:
+        Print("Not an int or no value")
 ```
 
 ### Modules and Using
